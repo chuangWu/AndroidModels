@@ -2,18 +2,19 @@ package cn.chuangblog.download.service;
 
 import android.content.Context;
 import android.content.Intent;
-import android.util.Log;
 
 import org.apache.http.HttpStatus;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import cn.chuangblog.download.ActionConstant;
 import cn.chuangblog.download.dao.ThreadDAO;
@@ -37,10 +38,14 @@ public class DownloadTask {
     private ThreadDAO threadDAO;
     private int finish = 0;
     private boolean pause = false;
+    private int threadCount = 1;
+    private List<DownloadThread> threadLists;
+    public static ExecutorService executorService = Executors.newCachedThreadPool();
 
-    public DownloadTask(FileInfo fileInfo, Context context) {
+    public DownloadTask(FileInfo fileInfo, Context context, int threadCount) {
         this.fileInfo = fileInfo;
         this.context = context;
+        this.threadCount = threadCount;
         threadDAO = new ThreadDAOImpl(context);
     }
 
@@ -49,19 +54,54 @@ public class DownloadTask {
         List<ThreadInfo> threadInfos = threadDAO.getThreads(fileInfo.getUrl());
         ThreadInfo threadInfo = null;
         if (threadInfos.size() == 0) {
-            threadInfo = new ThreadInfo(0, fileInfo.getUrl(), 0, fileInfo.getLength(), 0);
+            //threadInfo = new ThreadInfo(0, fileInfo.getUrl(), 0, fileInfo.getLength(), 0);
+            int length = fileInfo.getLength() / threadCount;
+            for (int i = 0; i < threadCount; i++) {
+                threadInfo = new ThreadInfo(i, fileInfo.getUrl(), length * i, (i + 1) * length - 1, 0);
+                if (i == threadCount - 1) {
+                    threadInfo.setEnd(fileInfo.getLength());
+                }
+
+                threadInfos.add(threadInfo);
+
+                threadDAO.insertThread(threadInfo);
+            }
         } else {
-            threadInfo = threadInfos.get(0);
+            // threadInfo = threadInfos.get(0);
         }
 
-        new DownloadThread(threadInfo).start();
+        threadLists = new ArrayList<>();
+        for (ThreadInfo info : threadInfos) {
+            DownloadThread thread = new DownloadThread(info);
+            executorService.execute(thread);
+            threadLists.add(thread);
+
+
+        }
 
     }
 
+    private synchronized void checkAllThreadsFinished() {
+        boolean allFinished = true;
+        for (DownloadThread thread : threadLists) {
+            if (!thread.isFinished) {
+                allFinished = false;
+                break;
+            }
+        }
+
+        if (allFinished) {
+            threadDAO.deleteThread(fileInfo.getUrl());
+            Intent intent = new Intent(ActionConstant.Broadcast.ACTION_FINISH);
+            intent.putExtra("fileInfo", fileInfo);
+            context.sendBroadcast(intent);
+        }
+    }
 
     class DownloadThread extends Thread {
 
         private ThreadInfo threadInfo;
+        private boolean isFinished;
 
         public DownloadThread(ThreadInfo threadInfo) {
             this.threadInfo = threadInfo;
@@ -69,9 +109,7 @@ public class DownloadTask {
 
         @Override
         public void run() {
-            if (!threadDAO.isExists(threadInfo.getUrl(), threadInfo.getId())) {
-                threadDAO.insertThread(threadInfo);
-            }
+
 
             HttpURLConnection conn = null;
             RandomAccessFile raf = null;
@@ -100,24 +138,26 @@ public class DownloadTask {
                     while ((len = is.read(buf)) != -1) {
                         raf.write(buf, 0, len);
                         finish += len;
+                        threadInfo.setFinished(threadInfo.getFinished() + len);
 
-                        if (System.currentTimeMillis() - time > 500) {
+                        if (System.currentTimeMillis() - time > 1000) {
                             time = System.currentTimeMillis();
-                            intent.putExtra("finished", finish * 100 / fileInfo.getLength());
+                            intent.putExtra("finished", finish * 100l / fileInfo.getLength());
+                            intent.putExtra("id", fileInfo.getId());
                             context.sendBroadcast(intent);
                         }
 
 
                         if (pause) {
-                            threadDAO.updateThread(threadInfo.getUrl(), threadInfo.getId(), finish);
+                            threadDAO.updateThread(threadInfo.getUrl(), threadInfo.getId(), threadInfo.getFinished());
                             return;
                         }
                     }
 
-                    threadDAO.deleteThread(threadInfo.getUrl(), threadInfo.getId());
+                    isFinished = true;
+
+                    checkAllThreadsFinished();
                 }
-
-
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {

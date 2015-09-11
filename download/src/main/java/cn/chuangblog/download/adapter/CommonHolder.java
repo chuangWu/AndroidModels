@@ -6,6 +6,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 /**
@@ -59,6 +60,13 @@ public class CommonHolder {
         return this;
     }
 
+
+    public CommonHolder setProgress(int resId, int progress) {
+        ProgressBar progressBar = getView(resId);
+        progressBar.setMax(100);
+        progressBar.setProgress(progress);
+        return this;
+    }
     public CommonHolder setImageResource(int resId, int imgId) {
         ImageView imageView = getView(resId);
         imageView.setImageResource(imgId);

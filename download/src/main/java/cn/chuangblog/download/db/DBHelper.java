@@ -22,9 +22,17 @@ public class DBHelper extends SQLiteOpenHelper {
             "thread_id integer,url text,start integer,end integer,finished integer)";
     private static final String SQL_DROP = "drop table if exists thread_info";
 
+    private static  DBHelper dbHelper;
 
-    public DBHelper(Context context) {
+    private DBHelper(Context context) {
         super(context, DB_NAME, null, VERSION);
+    }
+
+    public static DBHelper getInstance(Context context) {
+        if(dbHelper == null){
+            dbHelper = new DBHelper(context);
+        }
+        return dbHelper;
     }
 
 

@@ -15,7 +15,9 @@ public interface ActionConstant {
     String ACTION_START = "ACTION_START";
     String ACTION_STOP = "ACTION_STOP";
 
+
     interface Broadcast {
         String ACTION_UPDATE = "ACTION_UPDATE";
+        String ACTION_FINISH = "ACTION_FINISH";
     }
 }

@@ -14,6 +14,8 @@ import java.io.File;
 import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import cn.chuangblog.download.ActionConstant;
 import cn.chuangblog.download.entities.FileInfo;
@@ -30,8 +32,8 @@ import cn.chuangblog.download.entities.FileInfo;
 public class DownloadService extends Service {
 
     public static final String DOWNLOAD_PATH = Environment.getExternalStorageDirectory().getAbsolutePath() + "/download/";
-    public static final int MSG_INIT = 0;
-    private DownloadTask downloadTask;
+    public static final int MSG_INIT = 0x1;
+    private Map<Integer, DownloadTask> taskMap = new LinkedHashMap<Integer, DownloadTask>();
 
 
     private Handler handler = new Handler() {
@@ -40,8 +42,9 @@ public class DownloadService extends Service {
             switch (msg.what) {
                 case MSG_INIT:
                     FileInfo fileInfo = (FileInfo) msg.obj;
-                    downloadTask = new DownloadTask(fileInfo, DownloadService.this);
-                    downloadTask.download();
+                    DownloadTask task = new DownloadTask(fileInfo, DownloadService.this, 3);
+                    task.download();
+                    taskMap.put(fileInfo.getId(), task);
                     break;
             }
         }
@@ -56,13 +59,14 @@ public class DownloadService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (ActionConstant.ACTION_START.equals(intent.getAction())) {
             FileInfo fileInfo = (FileInfo) intent.getSerializableExtra("fileInfo");
-            new InitThread(fileInfo).start();
+            InitThread initThread = new InitThread(fileInfo);
+            DownloadTask.executorService.execute(initThread);
 
         } else if (ActionConstant.ACTION_STOP.equals(intent.getAction())) {
             FileInfo fileInfo = (FileInfo) intent.getSerializableExtra("fileInfo");
-            Log.e("STOP", fileInfo.toString());
-            if(downloadTask!=null){
-                downloadTask.setPause(true);
+            DownloadTask task = taskMap.get(fileInfo.getId());
+            if (task != null) {
+                task.setPause(true);
             }
         }
         return super.onStartCommand(intent, flags, startId);
